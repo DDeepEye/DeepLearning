@@ -1,6 +1,5 @@
 import MeCab
 import sys
-import os
 
 STR = '▁'
 def tokenization(src_path:str, tgt_path:str):
