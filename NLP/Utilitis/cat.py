@@ -32,7 +32,7 @@ def cat_list_to_list(lines_a:list, lines_b:list, segment='\t') -> list:
         print_frequence = int(length / 100)
         for i in range(length):
             newlines.append(lines_a[i].strip(' \n')+segment+lines_b[i])
-            if i % 100 == 0: utilitis.printProgress(i, length, 'list cat')
+            if i % print_frequence == 0: utilitis.printProgress(i, length, 'list cat')
 
     return newlines
 

@@ -15,6 +15,7 @@ def tokenization_data(lines:list, only_mecab:bool) -> list:
     m = MeCab.Tagger('-Owakati')
     newlines = []
     cnt = 0
+    print_frequence = int(length / 100)
     for line in lines:
         
         line = line.strip()
@@ -29,7 +30,7 @@ def tokenization_data(lines:list, only_mecab:bool) -> list:
         newlines.append(line)
 
         cnt += 1
-        utilitis.printProgress(cnt, length, 'mecab tokenizabtion')
+        if cnt % print_frequence == 0: utilitis.printProgress(cnt, length, 'mecab tokenizabtion')
 
     return newlines
 

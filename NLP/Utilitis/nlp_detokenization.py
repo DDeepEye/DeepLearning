@@ -24,9 +24,10 @@ if __name__ == "__main__":
     print('detokenzation size {}'.format(length))
 
     detokLines = []    
+    print_frequence = int(length / 100)
     for i in range(length):
         detokLines.append(detokenization(lines[i])+'\n')
-        utilitis.printProgress(i, length, 'detokenizabtion')
+        if i % print_frequence == 0: utilitis.printProgress(i, length, 'detokenizabtion')
 
     with open(sys.argv[2], 'wt', encoding='UTF8') as file:
         file.writelines(detokLines)

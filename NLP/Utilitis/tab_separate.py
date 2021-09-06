@@ -17,8 +17,9 @@ def tab_separate(src:str, output_lable:str, output_textdata:str):
     with open(output_textdata, 'wt', encoding='UTF8') as file:
         file.writelines(textdatas)
 
+
+
 def tab_separate_data(lines:list):
-    
     labels = []
     textdatas = []
     cnt = 0
@@ -30,7 +31,6 @@ def tab_separate_data(lines:list):
         textdatas.append(line[index+1:])
         cnt += 1
         if cnt % print_frequence == 0: utilitis.printProgress(cnt, length,'separate proc')
-
 
     return labels, textdatas
     
