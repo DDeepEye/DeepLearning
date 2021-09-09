@@ -3,6 +3,7 @@ import os
 import argparse
 import codecs
 import random
+import time
 from tab_separate import tab_separate_data
 from mecab_tokenization import tokenization_data
 from cat import cat_list_to_list
@@ -26,10 +27,12 @@ def create_parser():
     parser.add_argument(
         '--only_mecab', action='store_true',
         help='only mecab or bpe')
-
+    parser.add_argument(
+        '--is_tabcat', action='store_true',
+        help='line cat')
     parser.add_argument(
         '--is_shuffle', action='store_true',
-        help='line to shuffle')
+        help='requere is_tabcat line to shuffle')
 
     return parser
 
@@ -52,32 +55,43 @@ if __name__ == "__main__":
         lines = file.readlines()
         labels, texts = tab_separate_data(lines)
 
+    labels = tokenization_data(labels, args.only_mecab) 
     texts = tokenization_data(texts, args.only_mecab)
 
     if args.only_mecab == False :
-        temporary = 'temporary'
-        modelfile = 'model'
+        corpusFiles = [labels, texts]
 
-        with open(temporary, 'wt', encoding='UTF8') as file:
-            file.writelines(texts)
+        cnt = 0
+        for corpus in corpusFiles:
+            temporary = args.output+'.temporary'
+            modelfile = args.output+'.t{}'.format(cnt)+'.model'
+            outputfile = args.output+'.t{}'.format(cnt)
 
-        proc = 'python .\subword-nmt/learn_bpe.py --input {} --output {} --symbols {}'.format(temporary, modelfile, args.symbols)
-        print(proc)
-        os.system(proc)
+            with open(temporary, 'wt', encoding='UTF8') as file:
+                file.writelines(corpus)
 
-        proc = 'python .\subword-nmt/apply_bpe.py --codes {} --input {} --output {}'.format(modelfile, temporary, args.output)
-        print(proc)
-        os.system(proc)
+            print('learn_bpe {} file'.format(temporary))
+            proc = 'python .\subword-nmt/learn_bpe.py --input {} --output {} --symbols {} --verbose'.format(temporary, modelfile, args.symbols)
+            print(proc)
+            time.sleep(5)
+            os.system(proc)
 
-        with open(args.output, 'rt', encoding='UTF8') as file:
-            texts = file.readlines()
+            print('apply_bpe {} file'.format(modelfile))
+            proc = 'python .\subword-nmt/apply_bpe.py --codes {} --input {} --output {}'.format(modelfile, temporary, outputfile)
+            print(proc)
+            time.sleep(5)
+            os.system(proc)
 
-        os.remove(temporary)
-        os.remove(modelfile)
+            with open(outputfile, 'rt', encoding='UTF8') as file:
+                corpusFiles[cnt] = file.readlines()
+
+            os.remove(temporary)
+            cnt += 1
     
-    newlines = cat_list_to_list(labels , texts)
-
-    random.shuffle(newlines)
-    with open(args.output, 'wt', encoding='UTF8') as file:
-        file.writelines(newlines)
+    if args.is_tabcat:
+        newlines = cat_list_to_list(corpusFiles[0] , corpusFiles[1])
+        if args.is_shuffle:
+            random.shuffle(newlines)
+        with open(args.output, 'wt', encoding='UTF8') as file:
+            file.writelines(newlines)
 

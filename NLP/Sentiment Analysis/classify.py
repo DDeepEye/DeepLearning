@@ -10,7 +10,7 @@ if version[0] <= 0 and version[1] < 9:
 else:
     from torchtext.legacy import data
 
-sys.path.append(os.path.dirname(os.path.abspath(os.path.dirname(__file__))))
+sys.path.append(os.path.dirname(os.path.abspath(os.path.dirname(os.path.abspath(os.path.dirname(__file__))))))
 from Arguments import NLPArgument
 from ModelHeaders.rnn import RNNClassifier
 from ModelHeaders.cnn import CNNClassifier
@@ -63,6 +63,9 @@ if __name__ == '__main__':
     n_classes = len(classes)
 
     text_field, label_field = define_field()
+
+    print('vacab size => {}'.format(len(vocab)))
+
     text_field.vocab = vocab
     label_field.vocab = classes
 
@@ -107,10 +110,13 @@ if __name__ == '__main__':
             y_hat = []
             for idx in range(0, len(lines), arg.batch_size):                
                 # Converts string to list of index.
+                x = text_field.pad(lines[idx:idx + arg.batch_size])
+                print('pad => {}'.format(x))
                 x = text_field.numericalize(
-                    text_field.pad(lines[idx:idx + arg.batch_size]),
+                    x,
                     device='cuda:%d' % arg.gpu_id if arg.gpu_id >= 0 else 'cpu',
                 )
+                print('numericalize => {}'.format(x))
 
                 y_hat += [model(x).cpu()]
             # Concatenate the mini-batch wise result

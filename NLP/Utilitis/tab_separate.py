@@ -11,13 +11,16 @@ def tab_separate(src:str, output_lable:str, output_textdata:str):
 
     labels ,textdatas = tab_separate_data(lines)
 
+    
+    length = len(labels)
+    for i in range(length):
+        labels[i] = labels[i] + '\n'
+
     with open(output_lable, 'wt', encoding='UTF8') as file:
         file.writelines(labels)
 
     with open(output_textdata, 'wt', encoding='UTF8') as file:
         file.writelines(textdatas)
-
-
 
 def tab_separate_data(lines:list):
     labels = []
@@ -31,6 +34,10 @@ def tab_separate_data(lines:list):
         textdatas.append(line[index+1:])
         cnt += 1
         if cnt % print_frequence == 0: utilitis.printProgress(cnt, length,'separate proc')
+
+    length = len(labels)
+    for i in range(length):
+        labels[i] = labels[i] + '\n'
 
     return labels, textdatas
     

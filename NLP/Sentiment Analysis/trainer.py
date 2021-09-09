@@ -96,6 +96,10 @@ def NLPTrainer(model, optimizer, crit, loaders, arg:NLPArgument, modelname):
                 fix = 'trainning ==>{}/{}   loss = {} , accuracy = {}, |p_norm| = {}, |g_norm| = {}'.format(index, train_batch_maxnum, float(loss), float(accuracy), p_norm, g_norm)
                 printProgress(index, train_batch_maxnum, prefix=fix)
 
+            x.to(torch.device('cpu'))
+            y.to(torch.device('cpu'))
+            
+
         validate_loss:float = np.inf
         for index, mini_batch in enumerate(loaders.valid_loader):
             model.eval()
@@ -108,8 +112,6 @@ def NLPTrainer(model, optimizer, crit, loaders, arg:NLPArgument, modelname):
                 y_hat = model(x)
                 validate_loss = crit(y_hat, y)
 
-                
-
                 if isinstance(y, torch.LongTensor) or isinstance(y, torch.cuda.LongTensor):
                     accuracy = (torch.argmax(y_hat, dim=-1) == y).sum() / float(y.size(0))
                 else:
@@ -118,6 +120,9 @@ def NLPTrainer(model, optimizer, crit, loaders, arg:NLPArgument, modelname):
                 if int(index % (valid_batch_maxnum / iter_progress_freq)) == 0 or index+1 == valid_batch_maxnum:
                     fix = 'valide ==>{}/{}   loss = {} , accuracy = {}, |p_norm| = {}, |g_norm| = {}'.format(index, valid_batch_maxnum, float(loss), float(accuracy), p_norm, g_norm)
                     printProgress(index, valid_batch_maxnum, prefix=fix)
+
+                x.to(torch.device('cpu'))
+                y.to(torch.device('cpu'))
 
         if validate_loss < best_loss:
             best_model = deepcopy(model.state_dict())
