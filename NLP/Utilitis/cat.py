@@ -1,5 +1,6 @@
 import sys
 import os
+import torch
 
 sys.path.append(os.path.dirname(os.path.abspath(os.path.dirname(os.path.abspath(os.path.dirname(__file__))))))
 from Utilitis import utilitis
@@ -40,6 +41,28 @@ def cat_list_to_list(lines_a:list, lines_b:list, segment='\t') -> list:
 if __name__ == "__main__":
     cat_line_to_line(sys.argv[1], sys.argv[2], sys.argv[3])
 
+class ConcatTensor():
+    def __init__(self, concat_dim = 0):
+        self.tensor : torch.Tensor = None
+        self.concat_dim = concat_dim
+
+    def __add__(self, other):
+        if isinstance(other, list):
+            other = torch.cat(other, self.concat_dim)
+
+        if isinstance(other, ConcatTensor):
+            other = other.tensor
+
+        if self.tensor == None:
+            self.tensor = other
+        else:
+            if other != None:
+                self.tensor = torch.cat([self.tensor, other], self.concat_dim)
+
+        return self
+    
+    def __getitem__(self, idx):
+        return self.tensor[idx] if self.tensor is not None else None
 
 
         
