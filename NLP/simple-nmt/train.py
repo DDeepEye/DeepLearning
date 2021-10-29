@@ -7,6 +7,7 @@ import pprint
 import torch
 from torch import optim
 import torch.nn as nn
+from torch.serialization import save
 
 import torch_optimizer as custom_optim
 
@@ -16,249 +17,53 @@ import simple_nmt.data_loader as data_loader
 from simple_nmt.models.seq2seq import Seq2Seq
 from simple_nmt.models.transformer import Transformer
 
-from simple_nmt.trainer import BaseTrainer
+from simple_nmt.trainer import BaseTrainer,TrainerSaveInterface
 from simple_nmt.rl_trainer import MinimumRiskTrainer
+
+import DeepLearning.Arguments as Args
+from DeepLearning.Arguments import TrainerArguments
 
 sys.path.append(os.path.dirname(os.path.abspath(os.path.dirname(__file__))))
 from Arguments import NMTArgumets
 
 
-def define_argparser(is_continue=False , args:NMTArgumets = None):
-    p = argparse.ArgumentParser()
+class TrainerLoadInterface:
+    def load(self, trainer:BaseTrainer, **kwargs):   
+        save_folder = kwargs['save_folder']
+        model = torch.load(save_folder + Args.MODEL_FILE)
+        trainer.model.load_state_dict(model)
+        optim_file_path = save_folder + Args.OPTIMAIZER_ADAM if config.use_adam else Args.OPTIMAZIER_SGD
+        optimizer = torch.load(optim_file_path)
+        trainer.optimizer.load_state_dict(optimizer)
+        trainer.config = torch.load(save_folder+'config')
+        data_loader : DataLoader = kwargs['data_loader']
+        src_vocab = torch.load(config.save_folder+'src.vocab')
+        tgt_vocab = torch.load(config.save_folder+'tgt.vocab')
+        data_loader.load_vocab(src_vocab, tgt_vocab)
 
-    is_required = (not is_continue and args is None) 
+class BaseSaveLoad(TrainerSaveInterface, TrainerLoadInterface):
+    def save(self, trainer:BaseTrainer, **kwargs):
+        config = trainer.config
+        torch.save(trainer.model.state_dict(), config.save_folder+Args.MODEL_FILE) 
+        optim_file_path = config.save_folder + Args.OPTIMAIZER_ADAM if config.use_adam else Args.OPTIMAZIER_SGD
+        torch.save(trainer.optimizer.state_dict(), optim_file_path)
+        torch.save(config, config.save_folder + 'config')
+        torch.save(trainer.src_vocab, config.save_folder+'src.vocab')
+        torch.save(trainer.tgt_vocab, config.save_folder+'tgt.vocab')
 
-    p.add_argument(
-        '--model_fn',
-        required=is_required,
-        help='Model file name to save. Additional information would be annotated to the file name.'
-    )
+        super().save(trainer, kwargs)
+
+        with open(trainer.config.save_folder+'log.txt', 'wt', encoding='utf-8') as file:
+            file.writelines('epoch : {}\n'.format(trainer.config.init_epoch))
+            file.writelines('n_layers : {}\n'.format(trainer.config.layer_number))
+            file.writelines('max_length : {}\n'.format(trainer.config.max_length))
+            file.writelines('batch_size : {}\n'.format(trainer.config.batch_size))
+            file.writelines('hidden size : {}\n'.format(trainer.config.hidden_size))
+            file.writelines('word_vec_size : {}\n'.format(trainer.config.word_vec_size))
+            file.writelines('iteration_per_update : {}\n'.format(trainer.config.iteration_per_update))
+            file.writelines('use_adam : {}\n'.format(trainer.config.use_adam))
     
-    p.add_argument(
-        '--train',
-        required=is_required,
-        help='Training set file name except the extention. (ex: train.en --> train)'
-    )
-    p.add_argument(
-        '--valid',
-        required=is_required,
-        help='Validation set file name except the extention. (ex: valid.en --> valid)'
-    )
-    p.add_argument(
-        '--lang',
-        required=is_required,
-        help='Set of extention represents language pair. (ex: en + ko --> enko)'
-    )
-    p.add_argument(
-        '--gpu_id',
-        type=int,
-        default=-1,
-        help='GPU ID to train. Currently, GPU parallel is not supported. -1 for CPU. Default=%(default)s'
-    )
-    p.add_argument(
-        '--off_autocast',
-        action='store_true',
-        help='Turn-off Automatic Mixed Precision (AMP), which speed-up training.',
-    )
 
-    p.add_argument(
-        '--batch_size',
-        type=int,
-        default=32,
-        help='Mini batch size for gradient descent. Default=%(default)s'
-    )
-    p.add_argument(
-        '--n_epochs',
-        type=int,
-        default=20,
-        help='Number of epochs to train. Default=%(default)s'
-    )
-    p.add_argument(
-        '--verbose',
-        type=int,
-        default=2,
-        help='VERBOSE_SILENT, VERBOSE_EPOCH_WISE, VERBOSE_BATCH_WISE = 0, 1, 2. Default=%(default)s'
-    )
-    p.add_argument(
-        '--init_epoch',
-        required=is_required,
-        type=int,
-        default=0,
-        help='Set initial epoch number, which can be useful in continue training. Default=%(default)s'
-    )
-
-    p.add_argument(
-        '--max_length',
-        type=int,
-        default=100,
-        help='Maximum length of the training sequence. Default=%(default)s'
-    )
-    p.add_argument(
-        '--dropout',
-        type=float,
-        default=.2,
-        help='Dropout rate. Default=%(default)s'
-    )
-    p.add_argument(
-        '--word_vec_size',
-        type=int,
-        default=512,
-        help='Word embedding vector dimension. Default=%(default)s'
-    )
-    p.add_argument(
-        '--hidden_size',
-        type=int,
-        default=768,
-        help='Hidden size of LSTM. Default=%(default)s'
-    )
-    p.add_argument(
-        '--n_layers',
-        type=int,
-        default=4,
-        help='Number of layers in LSTM. Default=%(default)s'
-    )
-    p.add_argument(
-        '--max_grad_norm',
-        type=float,
-        default=5.,
-        help='Threshold for gradient clipping. Default=%(default)s'
-    )
-    p.add_argument(
-        '--iteration_per_update',
-        type=int,
-        default=1,
-        help='Number of feed-forward iterations for one parameter update. Default=%(default)s'
-    )
-
-    p.add_argument(
-        '--lr',
-        type=float,
-        default=1.,
-        help='Initial learning rate. Default=%(default)s',
-    )
-
-    p.add_argument(
-        '--lr_step',
-        type=int,
-        default=1,
-        help='Number of epochs for each learning rate decay. Default=%(default)s',
-    )
-    p.add_argument(
-        '--lr_gamma',
-        type=float,
-        default=.5,
-        help='Learning rate decay rate. Default=%(default)s',
-    )
-    p.add_argument(
-        '--lr_decay_start',
-        type=int,
-        default=10,
-        help='Learning rate decay start at. Default=%(default)s',
-    )
-
-    p.add_argument(
-        '--use_adam',
-        action='store_true',
-        help='Use Adam as optimizer instead of SGD. Other lr arguments should be changed.',
-    )
-    p.add_argument(
-        '--use_radam',
-        action='store_true',
-        help='Use rectified Adam as optimizer. Other lr arguments should be changed.',
-    )
-
-    p.add_argument(
-        '--rl_lr',
-        type=float,
-        default=.01,
-        help='Learning rate for reinforcement learning. Default=%(default)s'
-    )
-    p.add_argument(
-        '--rl_n_samples',
-        type=int,
-        default=1,
-        help='Number of samples to get baseline. Default=%(default)s'
-    )
-
-    p.add_argument(
-        '--rl_init_epoch',
-        type=int,
-        default=0,
-        help='Set initial epoch number, which can be useful in continue training. Default=%(default)s'
-    )
-
-    p.add_argument(
-        '--rl_n_epochs',
-        type=int,
-        default=10,
-        help='Number of epochs for reinforcement learning. Default=%(default)s'
-    )
-    p.add_argument(
-        '--rl_n_gram',
-        type=int,
-        default=6,
-        help='Maximum number of tokens to calculate BLEU for reinforcement learning. Default=%(default)s'
-    )
-    p.add_argument(
-        '--rl_reward',
-        type=str,
-        default='gleu',
-        help='Method name to use as reward function for RL training. Default=%(default)s'
-    )
-
-    p.add_argument(
-        '--rl_batch_ratio',
-        type=int,
-        default=1,
-        help='rl_batch_size = batch_size * rl_batch_ratio Default=%(default)s'
-    )
-
-    p.add_argument(
-        '--use_transformer',
-        action='store_true',
-        help='Set model architecture as Transformer.',
-    )
-    p.add_argument(
-        '--n_splits',
-        type=int,
-        default=8,
-        help='Number of heads in multi-head attention in Transformer. Default=%(default)s',
-    )
-
-    config = p.parse_args()
-
-    if (args is not None) and (not is_continue) :
-        config.model_fn = args.model_filepath
-        config.train = args.train_filepath
-        config.valid = args.valid_filepath
-        config.use_transformer = args.use_transformer
-        config.n_splits = args.n_splits
-        config.lang = args.language
-        config.gpu_id = args.gpu_id
-        config.batch_size = args.batch_size
-        config.n_epochs = args.epochs
-        config.verbose = args.verbose
-        config.max_length = args.max_length
-        config.dropout = args.dropout
-        config.lr = args.lr
-        config.lr_step = args.lr_step
-
-        config.rl_lr = args.rl_lr
-        config.rl_n_samples = args.rl_n_samples
-        config.rl_init_epoch = args.rl_init_epoch
-        config.rl_n_epochs = args.rl_n_epochs
-        config.rl_n_gram = args.rl_n_gram
-        config.rl_reward = args.rl_reward
-        config.rl_batch_ratio = args.rl_batch_ratio
-
-        
-        config.max_grad_norm = args.max_grad_norm
-        config.word_vec_size = args.word_vec_size
-        config.hidden_size = args.hidden_size
-        config.n_layers = args.layer_number
-        config.use_adam = args.use_adam
-        config.iteration_per_update = args.iteration_per_update
-    return config
 
 def get_model(input_size, output_size, config):
     if config.use_transformer:
@@ -331,7 +136,7 @@ def get_scheduler(optimizer, config):
     return lr_scheduler
 
 
-def main(config, model_weight=None, opt_weight=None, src_vocab = None, tgt_vocab = None):
+def main(config:TrainerArguments, model_weight=None, opt_weight=None, src_vocab = None, tgt_vocab = None):
     def print_config(config):
         pp = pprint.PrettyPrinter(indent=4)
         pp.pprint(vars(config))
@@ -381,7 +186,8 @@ def main(config, model_weight=None, opt_weight=None, src_vocab = None, tgt_vocab
         ,lr_scheduler= lr_scheduler
         ,config=config
         ,src_vocab=loader.src.vocab
-        ,tgt_vocab=loader.tgt.vocab)
+        ,tgt_vocab=loader.tgt.vocab
+        ,save_interface=BaseSaveLoad())
         trainer.train()
 
     if config.rl_n_epochs > config.rl_init_epoch:
@@ -397,7 +203,8 @@ def main(config, model_weight=None, opt_weight=None, src_vocab = None, tgt_vocab
         ,lr_scheduler= lr_scheduler
         ,config=config
         ,src_vocab=loader.src.vocab
-        ,tgt_vocab=loader.tgt.vocab)
+        ,tgt_vocab=loader.tgt.vocab
+        ,save_interface=BaseSaveLoad())
         mrt_trainer.train()
 
 
@@ -449,7 +256,7 @@ if __name__ == '__main__':
     cur_dir = os.path.dirname(__file__)
     if len(cur_dir) == 0 : cur_dir = '.'
 
-    args = NMTArgumets(model_filepath=cur_dir+'/2021.1004.TFM/Transformer.pth'
+    config = NMTArgumets(save_folder=cur_dir+'/2021.1004.TFM/'
                     , train_filepath=cur_dir+'/corpus/corpus.shuf.train.tok.bpe.tr'
                     , valid_filepath=cur_dir+'/corpus/corpus.shuf.valid.tok.bpe.tr'
                     , lr=1e-3
@@ -464,8 +271,7 @@ if __name__ == '__main__':
                     , max_length=64
                     , dropout=.2
                     , use_transformer=True
-                    , is_shutdonw=False)
+                    , is_shutdown=False)
     
-    config = define_argparser(is_continue=False, args = args)
     main(config)
-    if args.is_shutdon:os.system('shutdown -s -f')
+    if config.is_shutdown:os.system('shutdown -s -f')

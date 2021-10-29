@@ -1,4 +1,5 @@
 from copy import deepcopy
+from typing import Tuple
 
 import numpy as np
 import torch
@@ -9,9 +10,9 @@ from torch.cuda.amp import autocast
 from torch.cuda.amp import GradScaler
 
 from ignite.engine import Engine, Events
+from torch.utils import data
 
-from DeepLearning.Arguments import Arguments
-from simple_nmt.trainer import BaseTrainer
+from simple_nmt.trainer import BaseTrainer, TrainerSaveInterface
 
 VERBOSE_SILENT = 0
 VERBOSE_EPOCH_WISE = 1
@@ -22,6 +23,9 @@ from simple_nmt.utils import get_grad_norm, get_parameter_norm
 
 from simple_nmt.data_loader import DataLoader
 import simple_nmt.data_loader as data_loader
+
+from Utilitis.utilitis import get_grad_norm, get_parameter_norm, printProgress
+from Arguments import TrainerArguments
 
 
 class LanguageModelTrainingEngine(MaximumLikelihoodEstimationEngine):
@@ -155,7 +159,7 @@ class LanguageModelTrainingEngine(MaximumLikelihoodEstimationEngine):
 
 class LanguageModelTrainer():
 
-    def __init__(self, config:Arguments):
+    def __init__(self, config:TrainerArguments):
         self.config = config
 
     def train(
@@ -226,16 +230,141 @@ class LanguageModelTrainer():
         return model
 
 
-class LanguageModel(BaseTrainer):
+class Language_Model_Trainer(BaseTrainer):
     def __init__(self
         ,model
         ,crit
         ,optimizer
         ,train_loader
         ,valid_loader
+        ,config:TrainerArguments
+        ,src_vocab
+        ,tgt_vocab        
+        ,save_interface:TrainerSaveInterface
+        ,lr_scheduler=None
+        ,save_keyword:str = ''
+    ):
+        super().__init__(model
+        ,crit
+        ,optimizer
+        ,train_loader
+        ,valid_loader
         ,lr_scheduler
-        ,config : Arguments
+        ,config
         ,src_vocab
         ,tgt_vocab
-    ):
-        super().__init__(model,crit,optimizer,train_loader,valid_loader,lr_scheduler,config,src_vocab,tgt_vocab)
+        ,save_interface
+        )
+        self.is_src_target = False
+        if src_vocab is not None and tgt_vocab is not None:
+            raise NotImplementedError('You should assign None one of vocab to designate target language.')
+        if src_vocab is None:
+            self.is_src_target = False
+        elif tgt_vocab is None:
+            self.is_src_target = True
+        else:
+            raise NotImplementedError('You cannot assign None both vocab.')
+
+        self.save_keyword = save_keyword
+
+
+    def do_train(self, max_iteration)->dict:
+        for index, mini_batch in enumerate(self.train_loader):
+            self.iteration += 1
+            # You have to reset the gradients of all model parameters
+            # before to take another step in gradient descent.
+            self.model.train()        
+            self.optimizer.zero_grad()
+
+            device = next(self.model.parameters()).device
+            mini_batch.src = (mini_batch.src[0].to(device), mini_batch.src[1])
+            mini_batch.tgt = (mini_batch.tgt[0].to(device), mini_batch.tgt[1])
+
+            # if 'is_src_target' is true, the trainer would train language model for source language.
+            # For dsl case, both x and y has BOS and EOS tokens.
+            # Thus, we need to remove BOS and EOS before the training.
+            x = mini_batch.src[0] if self.is_src_target else mini_batch.tgt[0][:, :-1]
+            y = mini_batch.src[0] if self.is_src_target else mini_batch.tgt[0][:, 1:]            
+            # |x| = |y| = (batch_size, length)
+
+            with autocast(self.config.use_autocast):
+                y_hat = self.model(x)
+                # |y_hat| = (batch_size, length, output_size)
+
+                loss = self.crit(
+                    y_hat.contiguous().view(-1, y_hat.size(-1)),
+                    y.contiguous().view(-1),
+                ).sum()
+                backward_target = loss.div(y.size(0))
+
+            if self.config.gpu_id >= 0 and self.config.use_autocast:
+                self.scaler.scale(backward_target).backward()
+            else:
+                backward_target.backward()
+
+            word_count = int(mini_batch.src[1].sum()) if self.is_src_target else int(mini_batch.tgt[1].sum())
+            p_norm = float(get_parameter_norm(self.model.parameters()))
+            g_norm = float(get_grad_norm(self.model.parameters()))
+
+            # In orther to avoid gradient exploding, we apply gradient clipping.
+            torch_utils.clip_grad_norm_(
+                self.model.parameters(),
+                self.config.max_grad_norm,
+            )
+            # Take a step of gradient descent.
+            if self.config.gpu_id >= 0 and self.config.use_autocast:
+                # Use scaler instead of engine.optimizer.step() if using GPU.
+                self.scaler.step(self.optimizer)
+                self.scaler.update()
+            else:
+                self.optimizer.step()
+
+            loss = float(loss / word_count)
+            ppl = np.exp(loss)
+
+            fix = 'loss : {:.5f}  ppl : {:.4f}  |param| : {:.4f}  |g_param| : {:.4f}'.format(loss, ppl, g_norm, p_norm)
+            printProgress(index, len(self.train_loader), prefix=fix)
+        return {'loss':loss , 'ppl':ppl ,'param':p_norm,'g_param':g_norm}
+            
+
+    def do_valid(self)->dict:
+        for index, mini_batch in enumerate(self.valid_loader):
+            self.model.eval()
+
+            with torch.no_grad():
+                device = next(self.model.parameters()).device
+                mini_batch.src = (mini_batch.src[0].to(device), mini_batch.src[1])
+                mini_batch.tgt = (mini_batch.tgt[0].to(device), mini_batch.tgt[1])
+
+                x = mini_batch.src[0][:, :-1] if self.is_src_target else mini_batch.tgt[0][:, :-1]
+                y = mini_batch.src[0][:, 1:] if self.is_src_target else mini_batch.tgt[0][:, 1:]
+                # |x| = |y| = (batch_size, length)
+
+                with autocast(self.config.use_autocast):
+                    y_hat = self.model(x)
+                    # |y_hat| = (batch_size, length, output_size)
+
+                    loss = self.crit(y_hat.contiguous().view(-1, y_hat.size(-1)),
+                                    y.contiguous().view(-1),
+                                    ).sum()
+            
+            word_count = int(mini_batch.src[1].sum()) if self.is_src_target else int(mini_batch.tgt[1].sum())
+            loss = float(loss / word_count)
+            ppl = np.exp(loss)
+
+            fix = 'loss : {:.5f}  ppl : {:.4f}'.format(loss, ppl)
+            printProgress(index, len(self.valid_loader), prefix=fix)
+        return {'loss':loss , 'ppl':ppl}
+
+
+
+
+
+        
+
+
+
+
+    
+        
+        

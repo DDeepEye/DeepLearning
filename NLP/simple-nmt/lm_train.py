@@ -1,22 +1,44 @@
 import os
-import argparse
 import pprint
 
 import torch
 from torch import optim
-import torch.nn as nn
+
+import sys
+sys.path.append('D:\\work\\DeepLearning')
+
+from Arguments import TrainerArguments,MODEL_FILE, OPTIMAIZER_ADAM, OPTIMAZIER_SGD
+from Utilitis.utilitis import get_grad_norm, get_parameter_norm, printProgress
+
 
 from simple_nmt.data_loader import DataLoader
 import simple_nmt.data_loader as data_loader
 
 from simple_nmt.models.rnnlm import LanguageModel
-from simple_nmt.lm_trainer import LanguageModelTrainer as LMTrainer
-from simple_nmt.trainer import BaseTrainer
+from simple_nmt.lm_trainer import Language_Model_Trainer as LMTrainer
+from simple_nmt.trainer import BaseTrainer, TrainerSaveInterface
 
-from DeepLearning.Arguments import Arguments
+
+
 from dual_train import get_crits
 
-def get_models(src_vocab_size, tgt_vocab_size, config:Arguments):
+class LMTSaveLoad(TrainerSaveInterface):
+    def save(self, trainer:BaseTrainer, kwargs:dict = None):
+        trainer:LMTrainer = trainer
+        config = trainer.config
+        save_folder = config.save_folder
+        torch.save(trainer.model.state_dict() , save_folder+trainer.save_keyword+'.'+MODEL_FILE) 
+        optim_file_path = save_folder + trainer.save_keyword+'.'+OPTIMAIZER_ADAM if config.use_adam else OPTIMAZIER_SGD
+        torch.save(trainer.optimizer.state_dict(), optim_file_path)
+
+    def train_complet_save(self, config:TrainerArguments, src_vocab, tgt_vocab):
+        save_folder = config.save_folder
+        torch.save(config, save_folder+'lmt_config')
+        torch.save(src_vocab, save_folder+'lmt_src.vocab')
+        torch.save(tgt_vocab, save_folder+'lmt_tgt.vocab')
+        
+
+def get_models(src_vocab_size, tgt_vocab_size, config:TrainerArguments):
     language_models = [
         LanguageModel(
             tgt_vocab_size,
@@ -37,7 +59,7 @@ def get_models(src_vocab_size, tgt_vocab_size, config:Arguments):
     return language_models
 
 
-def main(config:Arguments):
+def main(config:TrainerArguments):
     pp = pprint.PrettyPrinter(indent=4)
     pp.pprint(vars(config))
 
@@ -73,19 +95,29 @@ def main(config:Arguments):
 
     print(models)
 
+    save_interface = LMTSaveLoad()
+
+    modelcnt = 0
     for model, crit in zip(models, crits):
         optimizer = optim.Adam(model.parameters())
-        lm_trainer = LMTrainer(config)
+        modelcnt += 1
 
-        model = lm_trainer.train(
+        lm_trainer = LMTrainer(
             model, crit, optimizer,
             train_loader=loader.train_iter,
             valid_loader=loader.valid_iter,
+            config=config,
+            save_interface=save_interface,
             src_vocab=loader.src.vocab if model.vocab_size == src_vocab_size else None,
             tgt_vocab=loader.tgt.vocab if model.vocab_size == tgt_vocab_size else None,
-            n_epochs=config.n_epochs,
-        )
+            save_keyword='lmt{}'.format(modelcnt)
+            )
+        lm_trainer.train()
+        config.init_epoch = 0
 
+    save_interface.train_complet_save(config, loader.src.vocab, loader.tgt.vocab)
+    
+    """
     torch.save(
         {
             'model': [
@@ -97,16 +129,28 @@ def main(config:Arguments):
             'tgt_vocab': loader.tgt.vocab,
         }, config.model_fn
     )
+    """
 
 if __name__ == '__main__':
 
     cur_dir = os.path.dirname(__file__)
     if len(cur_dir) == 0 : cur_dir = '.'
 
-    config = Arguments(save_folder=cur_dir+'/2021.1026.DSL'
+    """
+    config = TrainerArguments(save_folder=cur_dir+'/2021.1029.DSL'
                     ,train_filepath=cur_dir+'/corpus/corpus.shuf.train.tok.bpe.tr'
                     ,valid_filepath=cur_dir+'/corpus/corpus.shuf.valid.tok.bpe.tr'
                     ,is_use_adam=True
+                    ,gpu_id=0
+                    ,epochs=30
+                    ,dropout=0.2
+                    ,max_grad_norm=1e+8
+                    )
+    """
+    config = TrainerArguments(save_folder=cur_dir+'/2021.1029.DSL'
+                    ,train_filepath=cur_dir+'/corpus/corpus.shuf.train.tok.bpe.tr'
+                    ,valid_filepath=cur_dir+'/corpus/corpus.shuf.valid.tok.bpe.tr'
+                    ,use_adam=True
                     ,gpu_id=0
                     ,epochs=30
                     ,dropout=0.2

@@ -36,7 +36,7 @@ def overwrite_config(config, prev_config):
     return config
 
 
-def continue_main(config, args :NMTArgumets, main):
+def continue_main(config, args:NMTArgumets, main):
     config.model_fn = args.model_filepath    
     # If the model exists, load model and configuration to continue the training.
     if os.path.isfile(config.model_fn):

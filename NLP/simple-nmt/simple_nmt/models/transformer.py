@@ -5,7 +5,7 @@ import simple_nmt.data_loader as data_loader
 from simple_nmt.search import SingleBeamSearchBoard
 from typing import List, Tuple
 
-from Utilitis.cat import ConcatTensor
+from NLP.Utilitis.cat import ConcatTensor
 
 
 class Attention(nn.Module):

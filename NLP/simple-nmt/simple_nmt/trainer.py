@@ -12,9 +12,9 @@ from ignite.engine import Events
 from ignite.metrics import RunningAverage
 from ignite.contrib.handlers.tqdm_logger import ProgressBar
 
-
-sys.path.append(os.path.dirname(os.path.abspath(os.path.dirname(os.path.abspath(os.path.dirname(os.path.abspath(os.path.dirname(__file__))))))))
 from Utilitis.utilitis import get_grad_norm, get_parameter_norm, printProgress
+from Arguments import TrainerArguments
+
 
 VERBOSE_SILENT = 0
 VERBOSE_EPOCH_WISE = 1
@@ -314,6 +314,9 @@ class SingleTrainer():
 
         return model
 
+
+
+
 class BaseTrainer():
     def __init__(self
         ,model
@@ -322,10 +325,12 @@ class BaseTrainer():
         ,train_loader
         ,valid_loader
         ,lr_scheduler
-        ,config
+        ,config : TrainerArguments
         ,src_vocab
         ,tgt_vocab
+        ,save_interface
         ):
+        
         self.model = model
         self.crit = crit
         self.optimizer = optimizer
@@ -339,40 +344,32 @@ class BaseTrainer():
         self.device = torch.device('cuda:{}'.format(config.gpu_id) if config.gpu_id > -1 else 'cpu')
         self.src_vocab = src_vocab
         self.tgt_vocab = tgt_vocab
-        self.save_folder = ''
-
-        fns = config.model_fn.split('/')
-        fns = fns[:-1]
-        for fn in fns:
-            self.save_folder += '/' + fn
-        self.save_folder = self.save_folder.strip('/')
-        self.save_folder += '/'
         self.iteration = 0
+        self.save_interface:TrainerSaveInterface = save_interface
 
+    """"
     def save_model(self, log:dict):
-        torch.save(
-            {
-                'model': self.model.state_dict(),
-                'opt': self.optimizer.state_dict(),
-                'config': self.config,
-                'src_vocab': self.src_vocab,
-                'tgt_vocab': self.tgt_vocab,
-            }, self.config.model_fn
-        )
+        config = self.config
+        torch.save(self.model.state_dict() , config.save_folder+Args.MODEL_FILE) 
+        optim_file_path = config.save_folder + Args.OPTIMAIZER_ADAM if config.use_adam else Args.OPTIMAZIER_SGD
+        torch.save(self.optimizer.state_dict(), optim_file_path)
+        torch.save(config, config.save_folder + 'config')
+        torch.save(self.src_vocab, config.save_folder+'src.vocab')
+        torch.save(self.tgt_vocab, config.save_folder+'tgt.vocab')
 
-        with open(self.save_folder+'log.txt', 'wt', encoding='utf-8') as file:
+        with open(self.config.save_folder+'log.txt', 'wt', encoding='utf-8') as file:
             for key in log.keys():
                 file.writelines('{} : {}\n'.format(key, log[key]))
 
             file.writelines('epoch : {}\n'.format(self.config.init_epoch))
-            file.writelines('n_layers : {}\n'.format(self.config.n_layers))
+            file.writelines('n_layers : {}\n'.format(self.config.layer_number))
             file.writelines('max_length : {}\n'.format(self.config.max_length))
             file.writelines('batch_size : {}\n'.format(self.config.batch_size))
             file.writelines('hidden size : {}\n'.format(self.config.hidden_size))
             file.writelines('word_vec_size : {}\n'.format(self.config.word_vec_size))
             file.writelines('iteration_per_update : {}\n'.format(self.config.iteration_per_update))
             file.writelines('use_adam : {}\n'.format(self.config.use_adam))
-                
+    """
 
     def do_train(self, max_iteration)->dict:
         for index, mini_batch in enumerate(self.train_loader):
@@ -392,7 +389,7 @@ class BaseTrainer():
             # |x| = (batch_size, length)
             # |y| = (batch_size, length)
 
-            with autocast(not self.config.off_autocast):
+            with autocast(self.config.use_autocast):
                 # Take feed-forward
                 # Similar as before, the input of decoder does not have EOS token.
                 # Thus, remove EOS token for decoder input.
@@ -405,7 +402,7 @@ class BaseTrainer():
                 )
                 backward_target = train_loss.div(y.size(0)).div(self.config.iteration_per_update)
 
-            if self.config.gpu_id >= 0 and not self.config.off_autocast:
+            if self.config.gpu_id >= 0 and self.config.use_autocast:
                 self.scaler.scale(backward_target).backward()
             else:
                 backward_target.backward()
@@ -422,7 +419,7 @@ class BaseTrainer():
                     self.config.max_grad_norm,
                 )
                 # Take a step of gradient descent.
-                if self.config.gpu_id >= 0 and not self.config.off_autocast:
+                if self.config.gpu_id >= 0 and self.config.use_autocast:
                     # Use scaler instead of engine.optimizer.step() if using GPU.
                     self.scaler.step(self.optimizer)
                     self.scaler.update()
@@ -450,7 +447,7 @@ class BaseTrainer():
                 # |x| = (batch_size, length)
                 # |y| = (batch_size, length)
 
-                with autocast(not self.config.off_autocast):
+                with autocast(self.config.use_autocast):
                     y_hat = self.model(x, mini_batch.tgt[0][:, :-1])
                     # |y_hat| = (batch_size, n_classes)
                     valid_loss = self.crit(
@@ -471,12 +468,12 @@ class BaseTrainer():
         return self.config.init_epoch
 
     def _get_epochs(self):
-        max_epochs = self.config.n_epochs - self.config.init_epoch
+        max_epochs = self.config.epochs - self.config.init_epoch
         max_iteration = max_epochs * len(self.train_loader)
-        return self.config.init_epoch, self.config.n_epochs, max_epochs ,max_iteration
+        return self.config.init_epoch, self.config.epochs, max_epochs ,max_iteration
         
     def _warnning(self):
-        print('warnning!!! 현재 epoch {} 까지 모든 학습이 끝났습니다. \n학습을 연장하고 싶으시면 epoch 설정을 다시 하세요'.format(self.config.n_epochs))
+        print('warnning!!! 현재 epoch {} 까지 모든 학습이 끝났습니다. \n학습을 연장하고 싶으시면 epoch 설정을 다시 하세요'.format(self.config.epochs))
 
     def train(self):
         current_epoch, epochs, max_epochs, max_iteration = self._get_epochs()
@@ -493,6 +490,17 @@ class BaseTrainer():
                     self.lr_scheduler.step()
 
                 current_epoch = self._next_epoch()
-                self.save_model(log)
+                if self.save_interface is not None:
+                    self.save_interface.save(self, {'log' : log})
         else:
             self._warnning()
+
+
+class TrainerSaveInterface():
+    def save(self, trainer:BaseTrainer, kwargs:dict = None):
+        if kwargs is not None:
+            if 'log' in kwargs.keys():
+                log:dict = kwargs['log']
+                with open(trainer.config.save_folder+'log.txt', 'wt', encoding='utf-8') as file:
+                    for key in log.keys():
+                        file.writelines('{} : {}\n'.format(key, log[key]))

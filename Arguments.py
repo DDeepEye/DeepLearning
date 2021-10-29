@@ -1,5 +1,5 @@
 
-MODELFILE = 'model.pth'
+MODEL_FILE = 'model.pth'
 OPTIMAIZER_ADAM = 'adam.opt'
 OPTIMAZIER_SGD = 'sgd.opt'
 
@@ -19,15 +19,16 @@ class BaseArgument():
         self.epochs = epochs
         self.dropout = dropout
 
-class Arguments(BaseArgument):
+class TrainerArguments(BaseArgument):
 
     def __init__(self
         ,save_folder : str
         ,train_filepath : str
         ,valid_filepath : str
-        ,is_use_adam = True
+        ,use_adam = True
         ,gpu_id = -1
         ,batch_size = 256
+        ,init_epoch = 0
         ,epochs = 10
         ,dropout = 0.3
         ,min_vocab_freq = 5
@@ -37,7 +38,7 @@ class Arguments(BaseArgument):
         ,max_length = 256
         ,layer_number = 4
         ,language = 'enko'
-        ,off_autocast = False
+        ,use_autocast = True
         ,max_grad_norm = 5.0
         ,iteration_per_update = 1
         ,is_shutdown = False
@@ -45,7 +46,7 @@ class Arguments(BaseArgument):
     ):
         if save_folder[-1] != '/': save_folder += '/'
         super().__init__(
-            save_folder+MODELFILE
+            save_folder+MODEL_FILE
             ,train_filepath
             ,gpu_id
             ,batch_size
@@ -54,7 +55,9 @@ class Arguments(BaseArgument):
             )
         self.save_folder = save_folder
         self.valid_filepath = valid_filepath
-        self.optimfile = save_folder + OPTIMAIZER_ADAM if is_use_adam else save_folder + OPTIMAZIER_SGD
+        self.optimfile = save_folder + OPTIMAIZER_ADAM if use_adam else save_folder + OPTIMAZIER_SGD
+        self.use_adam = use_adam
+        self.init_epoch = init_epoch
         self.min_vocab_freq = min_vocab_freq
         self.max_vocab_size = max_vocab_size
         self.word_vec_size = word_vec_size
@@ -62,7 +65,7 @@ class Arguments(BaseArgument):
         self.hidden_size = hidden_size
         self.layer_number = layer_number
         self.language = language
-        self.off_autocast = off_autocast
+        self.use_autocast = use_autocast
         self.max_grad_norm = max_grad_norm
         self.iteration_per_update = iteration_per_update
         self.is_shutdown = is_shutdown
@@ -114,9 +117,9 @@ class NLPArgument(BaseArgument):
         self.filter_sizes = filter_sizes       
 
 
-class NMTArgumets(BaseArgument):
+class NMTArgumets(TrainerArguments):
     def __init__(self
-        ,model_filepath : str
+        ,save_folder : str
         ,train_filepath : str
         ,valid_filepath : str
         ,gpu_id = 0
@@ -134,27 +137,44 @@ class NMTArgumets(BaseArgument):
         ,rl_n_gram = 6
         ,rl_reward = 'gleu'
         ,rl_batch_ratio = 1.
-
         ,max_grad_norm = 5.0
+
+        ,min_vocab_freq = 5
+        ,max_vocab_size = 999999
         ,word_vec_size = 256
         ,max_length = 256
         ,verbose = 2
         ,hidden_size = 256
         ,layer_number = 4
         ,language = 'enko'
+        ,use_autocast = True
         ,use_transformer=False
         ,n_splits = 8
         ,use_adam = True
         ,iteration_per_update = 1
-        ,is_shutdonw = False
+        ,is_shutdown = False
         ):
         super().__init__(
-        model_filepath
+        save_folder
         ,train_filepath
+        ,valid_filepath
+        ,use_adam
         ,gpu_id
         ,batch_size
+        ,init_epoch
         ,epochs
-        ,dropout)
+        ,dropout
+        ,min_vocab_freq
+        ,max_vocab_size
+        ,word_vec_size
+        ,hidden_size
+        ,max_length
+        ,layer_number
+        ,language
+        ,use_autocast
+        ,max_grad_norm
+        ,iteration_per_update
+        ,is_shutdown)
 
         self.valid_filepath = valid_filepath
         self.init_epoch = init_epoch
@@ -180,7 +200,7 @@ class NMTArgumets(BaseArgument):
         self.n_splits = n_splits
         self.use_adam = use_adam
         self.iteration_per_update = iteration_per_update
-        self.is_shutdon = is_shutdonw
+        self.is_shutdown = is_shutdown
 
 
 class NMTTranslateArg():
