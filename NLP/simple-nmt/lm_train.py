@@ -8,7 +8,6 @@ import sys
 sys.path.append('D:\\work\\DeepLearning')
 
 from Arguments import TrainerArguments,MODEL_FILE, OPTIMAIZER_ADAM, OPTIMAZIER_SGD
-from Utilitis.utilitis import get_grad_norm, get_parameter_norm, printProgress
 
 
 from simple_nmt.data_loader import DataLoader
@@ -27,7 +26,7 @@ class LMTSaveLoad(TrainerSaveInterface):
         trainer:LMTrainer = trainer
         config = trainer.config
         save_folder = config.save_folder
-        torch.save(trainer.model.state_dict() , save_folder+trainer.save_keyword+'.'+MODEL_FILE) 
+        torch.save(trainer.best_model , save_folder+trainer.save_keyword+'.'+MODEL_FILE) 
         optim_file_path = save_folder + trainer.save_keyword+'.'+OPTIMAIZER_ADAM if config.use_adam else OPTIMAZIER_SGD
         torch.save(trainer.optimizer.state_dict(), optim_file_path)
 
@@ -88,11 +87,6 @@ def main(config:TrainerArguments):
         pad_index=data_loader.PAD
     )
 
-    if config.gpu_id >= 0:
-        for model, crit in zip(models, crits):
-            model.cuda(config.gpu_id)
-            crit.cuda(config.gpu_id)
-
     print(models)
 
     save_interface = LMTSaveLoad()
@@ -101,6 +95,10 @@ def main(config:TrainerArguments):
     for model, crit in zip(models, crits):
         optimizer = optim.Adam(model.parameters())
         modelcnt += 1
+
+        if config.gpu_id >= 0:
+            model.cuda(config.gpu_id)
+            crit.cuda(config.gpu_id)
 
         lm_trainer = LMTrainer(
             model, crit, optimizer,
@@ -114,6 +112,9 @@ def main(config:TrainerArguments):
             )
         lm_trainer.train()
         config.init_epoch = 0
+        if config.gpu_id >= 0:
+            model.cpu()
+            crit.cpu()
 
     save_interface.train_complet_save(config, loader.src.vocab, loader.tgt.vocab)
     
@@ -150,9 +151,12 @@ if __name__ == '__main__':
     config = TrainerArguments(save_folder=cur_dir+'/2021.1029.DSL'
                     ,train_filepath=cur_dir+'/corpus/corpus.shuf.train.tok.bpe.tr'
                     ,valid_filepath=cur_dir+'/corpus/corpus.shuf.valid.tok.bpe.tr'
+                    # ,train_filepath=cur_dir+'/corpus/1500_train_corpus.tr'
+                    # ,valid_filepath=cur_dir+'/corpus/1500_valid_corpus.tr'
                     ,use_adam=True
                     ,gpu_id=0
-                    ,epochs=30
+                    ,batch_size=192
+                    ,epochs=2
                     ,dropout=0.2
                     ,max_grad_norm=1e+8
                     )

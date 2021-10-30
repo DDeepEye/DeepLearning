@@ -1,5 +1,7 @@
 import argparse
 import sys
+sys.path.append('D:\\work\\DeepLearning')
+
 import os
 import codecs
 from operator import itemgetter

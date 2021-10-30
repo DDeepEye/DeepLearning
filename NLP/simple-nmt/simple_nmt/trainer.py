@@ -339,6 +339,7 @@ class BaseTrainer():
         self.lr_scheduler = lr_scheduler
         self.config = config
 
+        self.best_model = None
         self.best_loss = np.inf
         self.scaler = GradScaler()
         self.device = torch.device('cuda:{}'.format(config.gpu_id) if config.gpu_id > -1 else 'cpu')
@@ -475,6 +476,9 @@ class BaseTrainer():
     def _warnning(self):
         print('warnning!!! 현재 epoch {} 까지 모든 학습이 끝났습니다. \n학습을 연장하고 싶으시면 epoch 설정을 다시 하세요'.format(self.config.epochs))
 
+    def check_best(self, loss:float):
+        pass
+
     def train(self):
         current_epoch, epochs, max_epochs, max_iteration = self._get_epochs()
 
@@ -490,6 +494,7 @@ class BaseTrainer():
                     self.lr_scheduler.step()
 
                 current_epoch = self._next_epoch()
+                self.check_best(log['loss'])
                 if self.save_interface is not None:
                     self.save_interface.save(self, {'log' : log})
         else:

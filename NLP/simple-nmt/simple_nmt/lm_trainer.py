@@ -12,19 +12,16 @@ from torch.cuda.amp import GradScaler
 from ignite.engine import Engine, Events
 from torch.utils import data
 
-from simple_nmt.trainer import BaseTrainer, TrainerSaveInterface
+from simple_nmt.trainer import MaximumLikelihoodEstimationEngine, BaseTrainer, TrainerSaveInterface
 
 VERBOSE_SILENT = 0
 VERBOSE_EPOCH_WISE = 1
 VERBOSE_BATCH_WISE = 2
 
-from simple_nmt.trainer import MaximumLikelihoodEstimationEngine
-from simple_nmt.utils import get_grad_norm, get_parameter_norm
-
 from simple_nmt.data_loader import DataLoader
 import simple_nmt.data_loader as data_loader
 
-from Utilitis.utilitis import get_grad_norm, get_parameter_norm, printProgress
+from Utilitis.utilitis import get_grad_norm, get_parameter_norm, printProgress, eos_insert, bos_insert, bos_remove
 from Arguments import TrainerArguments
 
 
@@ -276,15 +273,18 @@ class Language_Model_Trainer(BaseTrainer):
             self.model.train()        
             self.optimizer.zero_grad()
 
-            device = next(self.model.parameters()).device
-            mini_batch.src = (mini_batch.src[0].to(device), mini_batch.src[1])
-            mini_batch.tgt = (mini_batch.tgt[0].to(device), mini_batch.tgt[1])
+            mini_batch.src = (mini_batch.src[0].to(self.device), mini_batch.src[1])
+            mini_batch.tgt = (mini_batch.tgt[0].to(self.device), mini_batch.tgt[1])
 
             # if 'is_src_target' is true, the trainer would train language model for source language.
             # For dsl case, both x and y has BOS and EOS tokens.
             # Thus, we need to remove BOS and EOS before the training.
-            x = mini_batch.src[0] if self.is_src_target else mini_batch.tgt[0][:, :-1]
-            y = mini_batch.src[0] if self.is_src_target else mini_batch.tgt[0][:, 1:]            
+            src = mini_batch.src if self.is_src_target else mini_batch.tgt
+            x = src[0]
+            y = bos_remove(src, data_loader.PAD)[0]
+
+            # x = mini_batch.src[0] if self.is_src_target else mini_batch.tgt[0][:, :-1]
+            # y = mini_batch.src[0] if self.is_src_target else mini_batch.tgt[0][:, 1:]
             # |x| = |y| = (batch_size, length)
 
             with autocast(self.config.use_autocast):
@@ -322,7 +322,7 @@ class Language_Model_Trainer(BaseTrainer):
             loss = float(loss / word_count)
             ppl = np.exp(loss)
 
-            fix = 'loss : {:.5f}  ppl : {:.4f}  |param| : {:.4f}  |g_param| : {:.4f}'.format(loss, ppl, g_norm, p_norm)
+            fix = 'loss : {:.2f}  ppl : {:.2f}  |param| : {:.2f}  |g_param| : {:.2f}'.format(loss, ppl, g_norm, p_norm)
             printProgress(index, len(self.train_loader), prefix=fix)
         return {'loss':loss , 'ppl':ppl ,'param':p_norm,'g_param':g_norm}
             
@@ -336,8 +336,12 @@ class Language_Model_Trainer(BaseTrainer):
                 mini_batch.src = (mini_batch.src[0].to(device), mini_batch.src[1])
                 mini_batch.tgt = (mini_batch.tgt[0].to(device), mini_batch.tgt[1])
 
-                x = mini_batch.src[0][:, :-1] if self.is_src_target else mini_batch.tgt[0][:, :-1]
-                y = mini_batch.src[0][:, 1:] if self.is_src_target else mini_batch.tgt[0][:, 1:]
+                src = mini_batch.src if self.is_src_target else mini_batch.tgt
+                x = src[0]
+                y = bos_remove(src, data_loader.PAD)[0]
+
+                # x = mini_batch.src[0] if self.is_src_target else mini_batch.tgt[0][:, :-1]
+                # y = mini_batch.src[0] if self.is_src_target else mini_batch.tgt[0][:, 1:]
                 # |x| = |y| = (batch_size, length)
 
                 with autocast(self.config.use_autocast):
@@ -355,6 +359,12 @@ class Language_Model_Trainer(BaseTrainer):
             fix = 'loss : {:.5f}  ppl : {:.4f}'.format(loss, ppl)
             printProgress(index, len(self.valid_loader), prefix=fix)
         return {'loss':loss , 'ppl':ppl}
+
+    def check_best(self, loss:float):
+        loss = float(loss)
+        if loss <= self.best_loss:
+            self.best_loss = loss
+            self.best_model = deepcopy(self.model.state_dict())
 
 
 

@@ -1,4 +1,5 @@
 import sys
+import torch
 
 def printProgress (iteration, total, prefix = '', suffix = '', decimals = 1, barLength = 100):
     formatStr = "{0:." + str(decimals) + "f}"
@@ -53,3 +54,34 @@ def get_parameter_norm(parameters, norm_type=2):
         print(e)
 
     return total_norm
+
+def eos_insert(x:list, eos:int)->list:
+    x = [x[0], x[1]]
+    batch_size = x[0].size(0)
+    max_length = x[0].size(1)
+
+    for i in range(batch_size):
+        length = x[1][i]
+        if max_length > length:
+            x[0][i,length] = eos
+            x[1][i] += 1
+    return x
+
+
+def bos_insert(x:list, bos:int)->list:
+    x = [x[0], x[1]]
+    batch_size = x[0].size(0)
+    bos_x = x[0].new_zeros(batch_size, 1) + bos
+    x[0] = torch.cat([bos_x, x[0][:,:-1]], dim=1)
+    x[1] += 1
+    return x
+
+
+def bos_remove(x:list, pad:int)->list:
+    x = [x[0], x[1]]
+    batch_size = x[0].size(0)
+    bos_x = x[0].new_zeros(batch_size, 1) + pad
+    x[0] = torch.cat([x[0][:,1:], bos_x], dim=1)
+    x[1] -= 1
+    return x
+    
