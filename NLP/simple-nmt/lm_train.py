@@ -116,7 +116,7 @@ def main(config:TrainerArguments):
             model.cpu()
             crit.cpu()
 
-    save_interface.train_complet_save(config, loader.src.vocab, loader.tgt.vocab)
+    save_interface.train_complet_save(config, loader.src.vocab, loader.tgt.vocab)    
     
     """
     torch.save(
@@ -156,9 +156,11 @@ if __name__ == '__main__':
                     ,use_adam=True
                     ,gpu_id=0
                     ,batch_size=192
-                    ,epochs=2
+                    ,epochs=30
                     ,dropout=0.2
                     ,max_grad_norm=1e+8
+                    ,is_shutdown=True
                     )
     
     main(config)
+    if config.is_shutdown:os.system('shutdown -s -f')
