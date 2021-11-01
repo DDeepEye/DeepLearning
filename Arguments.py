@@ -42,7 +42,6 @@ class TrainerArguments(BaseArgument):
         ,max_grad_norm = 5.0
         ,iteration_per_update = 1
         ,is_shutdown = False
-
     ):
         if save_folder[-1] != '/': save_folder += '/'
         super().__init__(
@@ -223,4 +222,59 @@ class NMTTranslateArg():
         self.beam_size = beam_size
         self.length_penalty = length_penalty
 
+
+class DualTrainerArgs(TrainerArguments):
+    def __init__(self
+        ,save_folder : str
+        ,train_filepath : str
+        ,valid_filepath : str
+        ,use_adam = True
+        ,gpu_id = -1
+        ,batch_size = 64
+        ,init_epoch = 0
+        ,epochs = 40
+        ,dropout = 0.3
+        ,min_vocab_freq = 5
+        ,max_vocab_size = 999999
+        ,word_vec_size = 512
+        ,hidden_size = 768
+        ,max_length = 256
+        ,layer_number = 4
+        ,language = 'enko'
+        ,use_autocast = True
+        ,max_grad_norm = 1.0
+        ,iteration_per_update = 1
+        ,is_shutdown = False
+
+        ,dsl_n_warmup_epochs = 30
+        ,dsl_lambda = 1e-2
+        ,use_transformer = False
+        ,n_splits = 8
+    ):
+        super().__init__(
+            save_folder
+            ,train_filepath
+            ,valid_filepath
+            ,use_adam
+            ,gpu_id
+            ,batch_size
+            ,init_epoch
+            ,epochs
+            ,dropout
+            ,min_vocab_freq
+            ,max_vocab_size
+            ,word_vec_size
+            ,hidden_size
+            ,max_length
+            ,layer_number
+            ,language
+            ,use_autocast
+            ,max_grad_norm
+            ,iteration_per_update
+            ,is_shutdown
+        )
+        self.dsl_n_warmup_epochs = dsl_n_warmup_epochs
+        self.dsl_lambda = dsl_lambda
+        self.use_transformer = use_transformer
+        self.n_splits = n_splits
 

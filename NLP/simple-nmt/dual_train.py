@@ -1,9 +1,13 @@
+import os
 import argparse
 import pprint
 
 import torch
 from torch import optim
 import torch.nn as nn
+
+import sys
+sys.path.append('D:\\work\\DeepLearning')
 
 from simple_nmt.data_loader import DataLoader
 import simple_nmt.data_loader as data_loader
@@ -13,177 +17,32 @@ from simple_nmt.models.transformer import Transformer
 from simple_nmt.models.rnnlm import LanguageModel
 
 from simple_nmt.lm_trainer import LanguageModelTrainer as LMTrainer
-from simple_nmt.dual_trainer import DualSupervisedTrainer as DSLTrainer
+from simple_nmt.dual_trainer import Dual_Supervised_Trainer as DSLTrainer , DualTrainerSaveInterface
+from Arguments import DualTrainerArgs,MODEL_FILE, OPTIMAIZER_ADAM, OPTIMAZIER_SGD
 
 
-def define_argparser(is_continue=False):
-    p = argparse.ArgumentParser()
+def load_lm(save_folder, language_models):
+    model1 = torch.load(save_folder+'lmt1.'+MODEL_FILE, map_location='cpu')
+    model2 = torch.load(save_folder+'lmt2.'+MODEL_FILE, map_location='cpu')
 
-    if is_continue:
-        p.add_argument(
-            '--load_fn',
-            required=True,
-            help='Model file name to continue.'
-        )
-
-    p.add_argument(
-        '--model_fn',
-        required=not is_continue,
-        help='Model file name to save. Additional information would be annotated to the file name.'
-    )
-    p.add_argument(
-        '--lm_fn',
-        required=not is_continue,
-        help='LM file name, which is trained with lm_train.py.'
-    )
-    p.add_argument(
-        '--train',
-        required=not is_continue,
-        help='Training set file name except the extention. (ex: train.en --> train)'
-    )
-    p.add_argument(
-        '--valid',
-        required=not is_continue,
-        help='Validation set file name except the extention. (ex: valid.en --> valid)'
-    )
-    p.add_argument(
-        '--lang',
-        required=not is_continue,
-        help='Set of extention represents language pair. (ex: en + ko --> enko)'
-    )
-    p.add_argument(
-        '--gpu_id',
-        type=int,
-        default=-1,
-        help='GPU ID to train. Currently, GPU parallel is not supported. -1 for CPU. Default=%(default)s'
-    )
-    p.add_argument(
-        '--off_autocast',
-        action='store_true',
-        help='Turn-off Automatic Mixed Precision (AMP), which speed-up training.',
-    )
-
-    p.add_argument(
-        '--batch_size',
-        type=int,
-        default=32,
-        help='Mini batch size for gradient descent. Default=%(default)s'
-    )
-    p.add_argument(
-        '--n_epochs',
-        type=int,
-        default=20,
-        help='Number of epochs to train. Default=%(default)s'
-    )
-    p.add_argument(
-        '--verbose',
-        type=int,
-        default=2,
-        help='VERBOSE_SILENT, VERBOSE_EPOCH_WISE, VERBOSE_BATCH_WISE = 0, 1, 2. Default=%(default)s'
-    )
-    p.add_argument(
-        '--init_epoch',
-        required=is_continue,
-        type=int,
-        default=1,
-        help='Set initial epoch number, which can be useful in continue training. Default=%(default)s'
-    )
-
-    p.add_argument(
-        '--max_length',
-        type=int,
-        default=100,
-        help='Maximum length of the training sequence. Default=%(default)s'
-    )
-    p.add_argument(
-        '--dropout',
-        type=float,
-        default=.2,
-        help='Dropout rate. Default=%(default)s'
-    )
-    p.add_argument(
-        '--word_vec_size',
-        type=int,
-        default=512,
-        help='Word embedding vector dimension. Default=%(default)s'
-    )
-    p.add_argument(
-        '--hidden_size',
-        type=int,
-        default=768,
-        help='Hidden size of LSTM. Default=%(default)s'
-    )
-    p.add_argument(
-        '--n_layers',
-        type=int,
-        default=4,
-        help='Number of layers in LSTM. Default=%(default)s'
-    )
-    p.add_argument(
-        '--max_grad_norm',
-        type=float,
-        default=1e+8,
-        help='Threshold for gradient clipping. Default=%(default)s'
-    )
-    p.add_argument(
-        '--iteration_per_update',
-        type=int,
-        default=1,
-        help='Number of feed-forward iterations for one parameter update. Default=%(default)s'
-    )
-
-    p.add_argument(
-        '--dsl_n_warmup_epochs',
-        type=int,
-        default=2,
-        help='Number of warmup epochs for Dual Supervised Learning. Default=%(default)s'
-    )
-    p.add_argument(
-        '--dsl_lambda',
-        type=float,
-        default=1e-3,
-        help='Lagrangian Multiplier for regularization term. Default=%(default)s'
-    )
-
-    p.add_argument(
-        '--use_transformer',
-        action='store_true',
-        help='Set model architecture as Transformer.',
-    )
-    p.add_argument(
-        '--n_splits',
-        type=int,
-        default=8,
-        help='Number of heads in multi-head attention in Transformer. Default=%(default)s',
-    )
-
-    config = p.parse_args()
-
-    return config
+    language_models[0].load_state_dict(model1)
+    language_models[1].load_state_dict(model2)
 
 
-def load_lm(fn, language_models):
-    saved_data = torch.load(fn, map_location='cpu')
-
-    model_weight = saved_data['model']
-    language_models[0].load_state_dict(model_weight[0])
-    language_models[1].load_state_dict(model_weight[1])
-
-
-def get_models(src_vocab_size, tgt_vocab_size, config):
+def get_models(src_vocab_size, tgt_vocab_size, config:DualTrainerArgs):
     language_models = [
         LanguageModel(
             tgt_vocab_size,
             config.word_vec_size,
             config.hidden_size,
-            n_layers=config.n_layers,
+            n_layers=config.layer_number,
             dropout_p=config.dropout,
         ),
         LanguageModel(
             src_vocab_size,
             config.word_vec_size,
             config.hidden_size,
-            n_layers=config.n_layers,
+            n_layers=config.layer_number,
             dropout_p=config.dropout,
         ),
     ]
@@ -195,8 +54,8 @@ def get_models(src_vocab_size, tgt_vocab_size, config):
                 config.hidden_size,
                 tgt_vocab_size,
                 n_splits=config.n_splits,
-                n_enc_blocks=config.n_layers,
-                n_dec_blocks=config.n_layers,
+                n_enc_blocks=config.layer_number,
+                n_dec_blocks=config.layer_number,
                 dropout_p=config.dropout,
             ),
             Transformer(
@@ -204,8 +63,8 @@ def get_models(src_vocab_size, tgt_vocab_size, config):
                 config.hidden_size,
                 src_vocab_size,
                 n_splits=config.n_splits,
-                n_enc_blocks=config.n_layers,
-                n_dec_blocks=config.n_layers,
+                n_enc_blocks=config.layer_number,
+                n_dec_blocks=config.layer_number,
                 dropout_p=config.dropout,
             ),
         ]
@@ -216,7 +75,7 @@ def get_models(src_vocab_size, tgt_vocab_size, config):
                 config.word_vec_size,
                 config.hidden_size,
                 tgt_vocab_size,
-                n_layers=config.n_layers,
+                n_layers=config.layer_number,
                 dropout_p=config.dropout,
             ),
             Seq2Seq(
@@ -224,7 +83,7 @@ def get_models(src_vocab_size, tgt_vocab_size, config):
                 config.word_vec_size,
                 config.hidden_size,
                 src_vocab_size,
-                n_layers=config.n_layers,
+                n_layers=config.layer_number,
                 dropout_p=config.dropout,
             ),
         ]
@@ -263,21 +122,25 @@ def get_optimizers(models, config):
     return optimizers
 
 
-def main(config, model_weight=None, opt_weight=None):
-    def print_config(config):
-        pp = pprint.PrettyPrinter(indent=4)
-        pp.pprint(vars(config))
-    print_config(config)
+def main(config:DualTrainerArgs, model_weight=None, opt_weight=None):
+
+    pp = pprint.PrettyPrinter(indent=4)
+    pp.pprint(vars(config))
 
     loader = DataLoader(
-        config.train,
-        config.valid,
-        (config.lang[:2], config.lang[-2:]),
+        config.train_filepath,
+        config.valid_filepath,
+        (config.language[:2], config.language[-2:]),
         batch_size=config.batch_size,
         device=-1,
         max_length=config.max_length,
         dsl=True,
     )
+
+    src_vocab = torch.load(config.save_folder+'lmt_src.vocab')
+    tgt_vocab = torch.load(config.save_folder+'lmt_tgt.vocab')
+
+    loader.load_vocab(src_vocab, tgt_vocab)
 
     src_vocab_size = len(loader.src.vocab)
     tgt_vocab_size = len(loader.tgt.vocab)
@@ -298,7 +161,7 @@ def main(config, model_weight=None, opt_weight=None):
         for model, w in zip(models + language_models, model_weight):
             model.load_state_dict(w)
 
-    load_lm(config.lm_fn, language_models)
+    load_lm(config.save_folder, language_models)
 
     if config.gpu_id >= 0:
         for lm, seq2seq, crit in zip(language_models, models, crits):
@@ -306,33 +169,50 @@ def main(config, model_weight=None, opt_weight=None):
             seq2seq.cuda(config.gpu_id)
             crit.cuda(config.gpu_id)
 
-    dsl_trainer = DSLTrainer(config)
-
     optimizers = get_optimizers(models, config)
 
     if opt_weight is not None:
         for opt, w in zip(optimizers, opt_weight):
             opt.load_state_dict(w)
 
-    if config.verbose >= 2:
-        print(language_models)
-        print(models)
-        print(crits)
-        print(optimizers)
+    print(language_models)
+    print(models)
+    print(crits)
+    print(optimizers)
 
-    dsl_trainer.train(
-        models,
-        language_models,
-        crits,
-        optimizers,
-        train_loader=loader.train_iter,
-        valid_loader=loader.valid_iter,
-        vocabs=[loader.src.vocab, loader.tgt.vocab],
-        n_epochs=config.n_epochs,
-        lr_schedulers=None,
-    )
+    dsl_trainer = DSLTrainer(config
+        ,models
+        ,language_models
+        ,crits
+        ,optimizers
+        ,loader.train_iter
+        ,loader.valid_iter
+        ,vocabs=[loader.src.vocab, loader.tgt.vocab]
+        ,lr_schedulers=None
+        )
+
+    dsl_trainer.train()
 
 
 if __name__ == '__main__':
-    config = define_argparser()
+
+    cur_dir = os.path.dirname(__file__)
+    if len(cur_dir) == 0 : cur_dir = '.'
+
+    config = DualTrainerArgs(save_folder=cur_dir+'/2021.1029.DSL'
+                    # ,train_filepath=cur_dir+'/corpus/corpus.shuf.train.tok.bpe.tr'
+                    # ,valid_filepath=cur_dir+'/corpus/corpus.shuf.valid.tok.bpe.tr'
+                    ,train_filepath=cur_dir+'/corpus/1500_train_corpus.tr'
+                    ,valid_filepath=cur_dir+'/corpus/1500_valid_corpus.tr'
+                    ,use_adam=True
+                    ,gpu_id=0
+                    ,batch_size=64
+                    ,epochs=1
+                    ,dropout=0.2
+                    ,max_grad_norm=1
+                    ,dsl_n_warmup_epochs = 1
+                    ,dsl_lambda = 1e-2
+                    ,is_shutdown=False
+                    )
+
     main(config)

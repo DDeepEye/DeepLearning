@@ -18,7 +18,6 @@ VERBOSE_SILENT = 0
 VERBOSE_EPOCH_WISE = 1
 VERBOSE_BATCH_WISE = 2
 
-from simple_nmt.data_loader import DataLoader
 import simple_nmt.data_loader as data_loader
 
 from Utilitis.utilitis import get_grad_norm, get_parameter_norm, printProgress, eos_insert, bos_insert, bos_remove
