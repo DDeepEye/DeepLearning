@@ -1,5 +1,6 @@
 from re import I
 import sys
+sys.path.append('D:\\work\\DeepLearning')
 import os
 import argparse
 import pprint
@@ -20,8 +21,8 @@ from simple_nmt.models.transformer import Transformer
 from simple_nmt.trainer import BaseTrainer,TrainerSaveInterface
 from simple_nmt.rl_trainer import MinimumRiskTrainer
 
-import DeepLearning.Arguments as Args
-from DeepLearning.Arguments import TrainerArguments
+import Arguments as Args
+from Arguments import TrainerArguments
 
 sys.path.append(os.path.dirname(os.path.abspath(os.path.dirname(__file__))))
 from Arguments import NMTArgumets
@@ -239,6 +240,11 @@ if __name__ == '__main__':
 
 
     
+    
+
+    cur_dir = os.path.dirname(__file__)
+    if len(cur_dir) == 0 : cur_dir = '.'
+
     # args = NMTArgumets(model_filepath='./2021.0919.NMT/NMT.pth'
     #                 , train_filepath='./corpus/corpus.shuf.train.tok.bpe.tr'
     #                 , valid_filepath='./corpus/corpus.shuf.valid.tok.bpe.tr'
@@ -253,24 +259,37 @@ if __name__ == '__main__':
     #                 , dropout=.2
     #                 , is_shutdonw=True)
 
-    cur_dir = os.path.dirname(__file__)
-    if len(cur_dir) == 0 : cur_dir = '.'
+    # config = NMTArgumets(save_folder=cur_dir+'/2021.11.03.x2y/'
+    #                 , train_filepath=cur_dir+'/corpus/corpus.shuf.train.tok.bpe.tr'
+    #                 , valid_filepath=cur_dir+'/corpus/corpus.shuf.valid.tok.bpe.tr'
+    #                 , lr=1e-3
+    #                 , lr_step=0
+    #                 , rl_n_epochs = 0
+    #                 , max_grad_norm=1e+8
+    #                 , batch_size=128
+    #                 , epochs=1
+    #                 , iteration_per_update=32
+    #                 , hidden_size=768
+    #                 , word_vec_size=512
+    #                 , max_length=64
+    #                 , dropout=.2
+    #                 , use_transformer=False
+    #                 , is_shutdown=False)
 
-    config = NMTArgumets(save_folder=cur_dir+'/2021.1004.TFM/'
+    config = NMTArgumets(save_folder=cur_dir+'/2021.11.03.x2y/'
                     , train_filepath=cur_dir+'/corpus/corpus.shuf.train.tok.bpe.tr'
                     , valid_filepath=cur_dir+'/corpus/corpus.shuf.valid.tok.bpe.tr'
                     , lr=1e-3
                     , lr_step=0
-                    , rl_n_epochs = 0
                     , max_grad_norm=1e+8
                     , batch_size=128
-                    , epochs=4
+                    , epochs=1
                     , iteration_per_update=32
                     , hidden_size=768
                     , word_vec_size=512
-                    , max_length=64
+                    , max_length=128
                     , dropout=.2
-                    , use_transformer=True
+                    , use_transformer=False
                     , is_shutdown=False)
     
     main(config)

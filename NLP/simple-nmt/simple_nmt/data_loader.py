@@ -17,7 +17,7 @@ class DataLoader():
                  valid_fn=None,
                  exts=None,
                  batch_size=64,
-                 device='cpu',
+                 device=-1,
                  max_vocab=99999999,
                  max_length=255,
                  fix_length=None,

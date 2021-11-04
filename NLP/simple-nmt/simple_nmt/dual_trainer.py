@@ -630,6 +630,13 @@ class Dual_Supervised_Trainer(BaseTrainer):
             float(dual_loss.sum()) if dual_loss is not None else .0,
         )
 
+    def _delete(self, src:list):
+        for m in src:
+            if isinstance(m,list) or isinstance(m,tuple):
+                self._delete(m)
+            else:
+                del m
+            
 
     def do_train(self, max_iteration)->dict:
         
@@ -734,7 +741,7 @@ class Dual_Supervised_Trainer(BaseTrainer):
                         scaler.update()
                     else:
                         optimizer.step()
-                
+
             x2y = float(loss_x2y / y_word_count)
             y2x = float(loss_y2x / x_word_count)
             reg = float(dual_loss / x.size(0))
@@ -742,6 +749,10 @@ class Dual_Supervised_Trainer(BaseTrainer):
             g_param = g_norm if not np.isnan(g_norm) and not np.isinf(g_norm) else 0.
             fix = 'x2y : {:.2f}  y2x : {:.2f}  reg : {:.2f}  |param| : {:.2f}  |g_param| : {:.2f}'.format(x2y, y2x, reg, param, g_param)
             printProgress(index, len(self.train_loader), prefix=fix)
+
+            self._delete([mini_batch.src, mini_batch.tgt])
+            torch.cuda.empty_cache()
+
         return {'x2y':x2y , 'y2x':y2x , 'reg':reg, '|param|':p_norm,'|g_param|':g_norm}
             
 
@@ -798,6 +809,9 @@ class Dual_Supervised_Trainer(BaseTrainer):
                 y2x = float(loss_y2x / x_word_count)
                 fix = 'x2y : {:.2f}  y2x : {:.2f}'.format(x2y, y2x)
                 printProgress(index, len(self.valid_loader), prefix=fix)
+
+            self._delete([mini_batch.src, mini_batch.tgt])
+            torch.cuda.empty_cache()
         return {'loss':{'x2y':x2y , 'y2x':y2x}}
 
 
@@ -853,6 +867,7 @@ class DualTrainerSaveInterface(TrainerSaveInterface):
     def save(self, trainer:Dual_Supervised_Trainer, kwargs:dict = None):
         config = trainer.config
         save_folder = config.save_folder
+        torch.save(config, config.save_folder + 'config')
         torch.save(trainer.best_model_x2y.state_dict() , save_folder+'x2y.'+MODEL_FILE) 
         torch.save(trainer.best_model_y2x.state_dict() , save_folder+'y2x.'+MODEL_FILE) 
         optim_file_path = save_folder+'x2y.'+OPTIMAIZER_ADAM if config.use_adam else OPTIMAZIER_SGD
@@ -866,5 +881,20 @@ class DualTrainerSaveInterface(TrainerSaveInterface):
                 with open(trainer.config.save_folder+'log.txt', 'wt', encoding='utf-8') as file:
                     for key in log.keys():
                         self._write(file, key, '\t', log[key])
+
+
+    def Load(self, kwargs:dict)->dict:
+        save_folder = kwargs['save_folder']
+        config : DualTrainerArgs = torch.load(save_folder+'config')
+        x2y:torch.nn.Module = torch.load(save_folder+'x2y.'+MODEL_FILE)
+        y2x:torch.nn.Module = torch.load(save_folder+'y2x.'+MODEL_FILE)
+
+        optim1 = torch.load(save_folder+'x2y.'+OPTIMAIZER_ADAM if config.use_adam else OPTIMAZIER_SGD)
+        optim2 = torch.load(save_folder+'y2x.'+OPTIMAIZER_ADAM if config.use_adam else OPTIMAZIER_SGD)
+
+        return {'config':config, 'x2y':x2y, 'y2x':y2x, 'optim1':optim1, 'optim2':optim2}
+        
+
+    
 
 

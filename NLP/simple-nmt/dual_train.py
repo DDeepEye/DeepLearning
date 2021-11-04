@@ -158,7 +158,7 @@ def main(config:DualTrainerArgs, model_weight=None, opt_weight=None):
     )
 
     if model_weight is not None:
-        for model, w in zip(models + language_models, model_weight):
+        for model, w in zip(models, model_weight):
             model.load_state_dict(w)
 
     load_lm(config.save_folder, language_models)
@@ -200,17 +200,18 @@ if __name__ == '__main__':
     if len(cur_dir) == 0 : cur_dir = '.'
 
     config = DualTrainerArgs(save_folder=cur_dir+'/2021.1029.DSL'
-                    # ,train_filepath=cur_dir+'/corpus/corpus.shuf.train.tok.bpe.tr'
-                    # ,valid_filepath=cur_dir+'/corpus/corpus.shuf.valid.tok.bpe.tr'
-                    ,train_filepath=cur_dir+'/corpus/1500_train_corpus.tr'
-                    ,valid_filepath=cur_dir+'/corpus/1500_valid_corpus.tr'
+                    ,train_filepath=cur_dir+'/corpus/corpus.shuf.train.tok.bpe.tr'
+                    ,valid_filepath=cur_dir+'/corpus/corpus.shuf.valid.tok.bpe.tr'
+                    # ,train_filepath=cur_dir+'/corpus/1500_train_corpus.tr'
+                    # ,valid_filepath=cur_dir+'/corpus/1500_valid_corpus.tr'
                     ,use_adam=True
                     ,gpu_id=0
                     ,batch_size=64
+                    ,max_length=128
                     ,epochs=1
                     ,dropout=0.2
                     ,max_grad_norm=1
-                    ,dsl_n_warmup_epochs = 1
+                    ,dsl_n_warmup_epochs = 30
                     ,dsl_lambda = 1e-2
                     ,is_shutdown=False
                     )

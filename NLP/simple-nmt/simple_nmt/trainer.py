@@ -509,3 +509,6 @@ class TrainerSaveInterface():
                 with open(trainer.config.save_folder+'log.txt', 'wt', encoding='utf-8') as file:
                     for key in log.keys():
                         file.writelines('{} : {}\n'.format(key, log[key]))
+
+    def Load(self, save_folder:str)->tuple:
+        pass
